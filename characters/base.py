@@ -60,13 +60,21 @@ class Character:
             context.log(f"{self.name} 因异常状态而跳过回合")
             self.on_turn_end(context)
             return
+        if self._abort_turn_if_dead(context):
+            return
         if not passive_blocked:
             self.passive_skill(context)
+            if self._abort_turn_if_dead(context):
+                return
         if self.can_use_active_skill(target, context):
             context.log(f"{self.name} 释放主动技能")
             self.active_skill(target, context)
+            if self._abort_turn_if_dead(context):
+                return
         normal_target = self.get_normal_attack_target(target, context)
         self.perform_normal_attack(normal_target, context)
+        if self._abort_turn_if_dead(context):
+            return
         self.on_turn_end(context)
 
     def is_alive(self) -> bool:
@@ -209,6 +217,12 @@ class Character:
         remaining = max(0.0, remaining - 1.0)
         self.unique_status["passive_disabled_turns"] = remaining
         context.log(f"{self.name} 的被动被封锁，剩余 {remaining:.1f} 回合")
+        return True
+
+    def _abort_turn_if_dead(self, context: "BattleContext") -> bool:
+        if self.is_alive():
+            return False
+        context.log(f"{self.name} 无法继续行动，已经倒下")
         return True
 
     def clone(self) -> "Character":
