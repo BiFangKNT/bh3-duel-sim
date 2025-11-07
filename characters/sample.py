@@ -329,10 +329,14 @@ class DreamSeeker(Character):
         self.basic_attack(target, context, base_damage=attack_value)
 
     def _prepare_attack_value(self, context: BattleContext) -> float:
-        if self.hp < 50.0:
-            context.log(f"{self.name} 陷入背水全力，攻击力提高至 30")
-            return 30.0
+        low_hp = self.hp < 50.0
         if context.rng.random() < 0.60:
-            context.log(f"{self.name} 被动触发，攻击力临时提高至 20")
-            return 20.0
+            boosted = 30.0 if low_hp else 20.0
+            if low_hp:
+                context.log(f"{self.name} 被动触发，低血攻势暴涨至 {boosted}")
+            else:
+                context.log(f"{self.name} 被动触发，攻击力临时提高至 {boosted}")
+            return boosted
+        if low_hp:
+            context.log(f"{self.name} 低血但未触发被动，攻击力保持原值")
         return self.stats.attack
