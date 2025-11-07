@@ -107,7 +107,7 @@ class Character:
         defense = 0.0 if ignore_defense else target.stats.defense
         raw_damage = max(1.0, attack_value - defense)
         dealt = target.receive_damage(raw_damage, ignore_reduction=ignore_reduction)
-        context.log(f"{self.name} 对 {target.name} 造成 {dealt:.1f} 点伤害")
+        context.log(f"{self.name} 对 {target.name} 造成 {dealt:.1f} 点伤害，{target.name} 当前 HP {max(target.hp, 0):.1f}")
         return dealt
 
     def receive_damage(self, amount: float, *, ignore_reduction: bool = False, pure_damage: bool = False) -> float:
@@ -182,6 +182,22 @@ class Character:
         self.unique_status["passive_disabled_turns"] = updated
         if context:
             context.log(f"{self.name} 的被动被封锁 {updated:.1f} 回合")
+
+    def get_passive_disabled_turns(self) -> float:
+        """返回被动被封锁的剩余回合数，0 表示未被封锁。"""
+        return float(self.unique_status.get("passive_disabled_turns", 0.0))
+
+    def can_trigger_passive_effect(
+        self, context: "BattleContext" | None = None, *, announce: bool = True
+    ) -> bool:
+        """供子类在自定义被动逻辑中统一判定封锁状态。"""
+        remaining = self.get_passive_disabled_turns()
+        if remaining <= 0:
+            return True
+        if context and announce:
+            context.log(f"{self.name} 的被动被封锁，剩余 {remaining:.1f} 回合")
+        return False
+
 
     def on_negative_state(self, state: str, context: "BattleContext" | None = None) -> None:
         """子类可覆写：受到控制或属性降低时触发。"""
