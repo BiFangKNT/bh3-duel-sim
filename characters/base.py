@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Dict
+from typing import Any, Callable, Dict
 
 
 @dataclass
@@ -31,7 +31,11 @@ class Character:
         self.stats = stats
         self.hp = float(stats.max_hp)
         self.common_status: Dict[str, float] = {key: 0.0 for key in self.COMMON_STATE_KEYS}
-        self.unique_status: Dict[str, float] = {}
+        self.unique_status: Dict[str, Any] = {}
+        self._turn_hooks: Dict[str, list[Callable[["Character", "BattleContext"], None]]] = {
+            "start": [],
+            "end": [],
+        }
 
     # 可以由子类覆写的方法
     def active_skill(self, target: "Character", context: "BattleContext") -> None:
@@ -108,6 +112,7 @@ class Character:
         return actual
 
     def on_turn_start(self, context: "BattleContext") -> bool:
+        self._run_turn_hooks("start", context)
         acted = True
         penalty_before = self.common_status.get("speed_penalty", 0.0)
         if penalty_before > 0:
@@ -134,6 +139,7 @@ class Character:
                 context.log(f"{self.name} 仍处于混乱，剩余 {remaining:.1f} 回合")
             else:
                 context.log(f"{self.name} 恢复了清醒")
+        self._run_turn_hooks("end", context)
 
     def apply_confusion(self, turns: float, context: "BattleContext" | None = None) -> None:
         new_turns = max(self.common_status.get("confused_turns", 0.0), max(0.0, turns))
@@ -154,6 +160,22 @@ class Character:
         value = max(0.0, value - amount)
         self.common_status[key] = value
         return value
+
+    def add_turn_hook(self, when: str, hook: Callable[["Character", "BattleContext"], None]) -> None:
+        hooks = self._turn_hooks.setdefault(when, [])
+        if hook not in hooks:
+            hooks.append(hook)
+
+    def remove_turn_hook(self, when: str, hook: Callable[["Character", "BattleContext"], None]) -> None:
+        hooks = self._turn_hooks.get(when)
+        if not hooks:
+            return
+        if hook in hooks:
+            hooks.remove(hook)
+
+    def _run_turn_hooks(self, when: str, context: "BattleContext") -> None:
+        for hook in list(self._turn_hooks.get(when, [])):
+            hook(self, context)
 
     def clone(self) -> "Character":
         """以初始状态复制角色，供新的战斗使用。"""

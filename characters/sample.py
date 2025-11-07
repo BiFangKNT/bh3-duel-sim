@@ -96,3 +96,78 @@ class Kiana(Character):
         passive_damage = max(1.0, current_hp * 0.15)
         pure = target.receive_damage(passive_damage, ignore_reduction=True, pure_damage=True)
         context.log(f"被动追加真伤 {pure:.1f}")
+
+
+class LiSushang(Character):
+    name = "李素裳"
+    BLEED_KEY = "lis_bleed"
+
+    def __init__(self) -> None:
+        super().__init__(Stats(max_hp=100.0, attack=20.0, defense=7.0, speed=25.0))
+        self.unique_status["attack_cycle"] = 0.0
+
+    def can_use_active_skill(self, target: Character, context: BattleContext) -> bool:
+        cycle = self._advance_cycle(context)
+        return cycle % 3 == 0
+
+    def _advance_cycle(self, context: BattleContext) -> int:
+        cycle = int(self.unique_status.get("attack_cycle", 0.0) + 1.0)
+        self.unique_status["attack_cycle"] = float(cycle)
+        context.log(f"{self.name} 进入第 {cycle} 次攻击流程")
+        return cycle
+
+    def active_skill(self, target: Character, context: BattleContext) -> None:
+        context.log(f"{self.name} 释放凌厉剑舞")
+        damage = self.basic_attack(target, context, base_damage=22.0)
+        stacks = context.rng.randint(3, 6)
+        self._apply_bleed(target, float(stacks), 2.0, context)
+        context.log(f"{self.name} 主动技造成 {damage:.1f} 伤害并施加 {stacks} 层流血")
+
+    def perform_normal_attack(self, target: Character, context: BattleContext) -> None:
+        self.basic_attack(target, context)
+        if context.rng.random() < 0.30:
+            self._apply_bleed(target, 2.0, 2.0, context)
+            context.log(f"{self.name} 被动触发，额外附加流血")
+
+    def _apply_bleed(
+        self,
+        target: Character,
+        stacks: float,
+        turns: float,
+        context: BattleContext,
+    ) -> None:
+        state = target.unique_status.get(self.BLEED_KEY)
+        if not state:
+            state = {"stacks": 0.0, "duration": 0.0}
+            target.unique_status[self.BLEED_KEY] = state
+        state["stacks"] = max(0.0, state.get("stacks", 0.0) + stacks)
+        state["duration"] = float(turns)
+        context.log(
+            f"{target.name} 流血层数 {state['stacks']:.0f}，持续 {state['duration']:.0f} 回合"
+        )
+        if not state.get("hook_registered"):
+            target.add_turn_hook("start", self._bleed_tick)
+            state["hook_registered"] = True
+
+    @staticmethod
+    def _bleed_tick(victim: Character, context: BattleContext) -> None:
+        state = victim.unique_status.get(LiSushang.BLEED_KEY)
+        if not state:
+            victim.remove_turn_hook("start", LiSushang._bleed_tick)
+            return
+        stacks = state.get("stacks", 0.0)
+        duration = state.get("duration", 0.0)
+        if stacks <= 0 or duration <= 0:
+            victim.remove_turn_hook("start", LiSushang._bleed_tick)
+            victim.unique_status.pop(LiSushang.BLEED_KEY, None)
+            context.log(f"{victim.name} 的流血效果结束")
+            return
+        victim.receive_damage(stacks, ignore_reduction=True, pure_damage=True)
+        context.log(f"{victim.name} 因流血受到 {stacks:.1f} 点真伤")
+        duration -= 1.0
+        if duration <= 0:
+            victim.remove_turn_hook("start", LiSushang._bleed_tick)
+            victim.unique_status.pop(LiSushang.BLEED_KEY, None)
+            context.log(f"{victim.name} 的流血效果结束")
+        else:
+            state["duration"] = duration
