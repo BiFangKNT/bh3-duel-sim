@@ -171,3 +171,80 @@ class LiSushang(Character):
             context.log(f"{victim.name} 的流血效果结束")
         else:
             state["duration"] = duration
+
+
+class ChenXue(Character):
+    name = "晨雪"
+
+    def __init__(self) -> None:
+        super().__init__(Stats(max_hp=100.0, attack=16.0, defense=8.0, speed=21.0))
+        self.unique_status["attack_cycle"] = 0.0
+        self._amplify_survivability()
+
+    def _amplify_survivability(self) -> None:
+        current_hp = self.hp
+        self.stats.max_hp *= 1.5
+        self.hp = min(current_hp, self.stats.max_hp)
+        self.stats.defense *= 0.85
+
+    def passive_skill(self, context: BattleContext) -> None:
+        threshold = self.stats.max_hp * 0.30
+        if self.hp < threshold:
+            context.log(f"{self.name} 低血激发自愈")
+            self.heal(5.0, context)
+
+    def can_use_active_skill(self, target: Character, context: BattleContext) -> bool:
+        cycle = self._advance_cycle(context)
+        return cycle % 2 == 0
+
+    def _advance_cycle(self, context: BattleContext) -> int:
+        cycle = int(self.unique_status.get("attack_cycle", 0.0) + 1.0)
+        self.unique_status["attack_cycle"] = float(cycle)
+        context.log(f"{self.name} 进入第 {cycle} 次攻击流程")
+        return cycle
+
+    def active_skill(self, target: Character, context: BattleContext) -> None:
+        lost_hp = max(0.0, self.stats.max_hp - self.hp)
+        extra_damage = max(1.0, lost_hp * 0.12 + 8.0)
+        dealt = target.receive_damage(extra_damage)
+        context.log(f"{self.name} 将失血化为霜刃，额外造成 {dealt:.1f} 点伤害")
+
+
+class Theresa(Character):
+    name = "德丽莎"
+
+    def __init__(self) -> None:
+        super().__init__(Stats(max_hp=100.0, attack=23.0, defense=7.0, speed=24.0))
+        self.unique_status["attack_cycle"] = 0.0
+
+    def perform_normal_attack(self, target: Character, context: BattleContext) -> None:
+        cycle = int(self.unique_status.get("attack_cycle", 0.0) + 1.0)
+        self.unique_status["attack_cycle"] = float(cycle)
+        if cycle % 3 == 0:
+            damage = self._special_attack(target, context)
+        else:
+            damage = self.basic_attack(target, context)
+        self._try_disable_enemy_passive(target, context, damage)
+
+    def _special_attack(self, target: Character, context: BattleContext) -> float:
+        context.log(f"{self.name} 触发特殊攻击")
+        if context.rng.random() < 0.70:
+            dealt = target.receive_damage(30.0)
+            context.log(f"{self.name} 造成 {dealt:.1f} 点爆发伤害")
+        else:
+            dealt = target.receive_damage(1.0)
+            context.log(f"{self.name} 攻击落空，仅造成 {dealt:.1f} 点伤害")
+            context.log(f"{self.name} 借机恢复气息")
+            self.heal(18.0, context)
+        return dealt
+
+    def _try_disable_enemy_passive(self, target: Character, context: BattleContext, damage: float) -> None:
+        if damage <= 0 or not target.is_alive():
+            return
+        if context.rng.random() < 0.25:
+            target.disable_passive(2.0, context)
+
+    def on_negative_state(self, state: str, context: BattleContext | None = None) -> None:
+        if context:
+            context.log(f"{self.name} 因 {state} 被动触发恢复")
+        self.heal(self.stats.max_hp * 0.10, context)

@@ -3,13 +3,14 @@ from __future__ import annotations
 from typing import Tuple, Type
 
 from battle import BattleEngine
-from characters import Bronya, BronyaTest, Character, Kiana, LiSushang
+from characters import Bronya, BronyaTest, Character, Kiana, LiSushang, ChenXue, Theresa
 
 BATTLES = 10_000
 MATCHUPS: Tuple[Tuple[Type[Character], Type[Character]], ...] = (
     # (Bronya, Kiana),
     # (LiSushang, Kiana),
-    (Bronya, LiSushang),
+    # (Bronya, LiSushang),
+    (ChenXue, Theresa),
 )
 
 

@@ -55,11 +55,13 @@ class Character:
     # 战斗行为
     def take_turn(self, target: "Character", context: "BattleContext") -> None:
         context.log(f"{self.name} 行动开始，HP {self.hp:.1f}")
+        passive_blocked = self._consume_passive_disable_turn(context)
         if not self.on_turn_start(context):
             context.log(f"{self.name} 因异常状态而跳过回合")
             self.on_turn_end(context)
             return
-        self.passive_skill(context)
+        if not passive_blocked:
+            self.passive_skill(context)
         if self.can_use_active_skill(target, context):
             context.log(f"{self.name} 释放主动技能")
             self.active_skill(target, context)
@@ -111,6 +113,16 @@ class Character:
         self.hp -= actual
         return actual
 
+    def heal(self, amount: float, context: "BattleContext" | None = None) -> float:
+        if amount <= 0:
+            return 0.0
+        before = self.hp
+        self.hp = min(self.stats.max_hp, self.hp + amount)
+        recovered = self.hp - before
+        if recovered > 0 and context:
+            context.log(f"{self.name} 回复 {recovered:.1f} 点生命")
+        return recovered
+
     def on_turn_start(self, context: "BattleContext") -> bool:
         self._run_turn_hooks("start", context)
         acted = True
@@ -146,12 +158,25 @@ class Character:
         self.common_status["confused_turns"] = new_turns
         if context:
             context.log(f"{self.name} 陷入混乱 {new_turns:.1f} 回合")
+        self.on_negative_state("confusion", context)
 
     def apply_damage_reduction(self, value: float, turns: float, context: "BattleContext" | None = None) -> None:
         self.common_status["damage_reduction_value"] = max(0.0, value)
         self.common_status["damage_reduction_turns"] = max(0.0, turns)
         if context:
             context.log(f"{self.name} 获得减伤 {value:.1f}，持续 {turns:.1f} 回合")
+
+    def disable_passive(self, turns: float, context: "BattleContext" | None = None) -> None:
+        if turns <= 0:
+            return
+        current = float(self.unique_status.get("passive_disabled_turns", 0.0))
+        updated = max(current, float(turns))
+        self.unique_status["passive_disabled_turns"] = updated
+        if context:
+            context.log(f"{self.name} 的被动被封锁 {updated:.1f} 回合")
+
+    def on_negative_state(self, state: str, context: "BattleContext" | None = None) -> None:
+        """子类可覆写：受到控制或属性降低时触发。"""
 
     def _decay_common_status(self, key: str, amount: float = 1.0) -> float:
         value = self.common_status.get(key, 0.0)
@@ -176,6 +201,15 @@ class Character:
     def _run_turn_hooks(self, when: str, context: "BattleContext") -> None:
         for hook in list(self._turn_hooks.get(when, [])):
             hook(self, context)
+
+    def _consume_passive_disable_turn(self, context: "BattleContext") -> bool:
+        remaining = float(self.unique_status.get("passive_disabled_turns", 0.0))
+        if remaining <= 0:
+            return False
+        remaining = max(0.0, remaining - 1.0)
+        self.unique_status["passive_disabled_turns"] = remaining
+        context.log(f"{self.name} 的被动被封锁，剩余 {remaining:.1f} 回合")
+        return True
 
     def clone(self) -> "Character":
         """以初始状态复制角色，供新的战斗使用。"""
