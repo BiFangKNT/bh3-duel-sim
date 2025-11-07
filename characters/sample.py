@@ -210,6 +210,42 @@ class ChenXue(Character):
         context.log(f"{self.name} 将失血化为霜刃，额外造成 {dealt:.1f} 点伤害")
 
 
+class ChenXueCopy(Character):
+    name = "晨雪-复制"
+
+    def __init__(self) -> None:
+        super().__init__(Stats(max_hp=100.0, attack=16.0, defense=8.0, speed=21.0))
+        self.unique_status["attack_cycle"] = 0.0
+        self._amplify_survivability()
+
+    def _amplify_survivability(self) -> None:
+        self.stats.max_hp *= 1.5
+        self.hp *= 1.5
+        self.stats.defense *= 0.85
+
+    def passive_skill(self, context: BattleContext) -> None:
+        threshold = self.stats.max_hp * 0.30
+        if self.hp < threshold:
+            context.log(f"{self.name} 低血激发自愈")
+            self.heal(5.0, context)
+
+    def can_use_active_skill(self, target: Character, context: BattleContext) -> bool:
+        cycle = self._advance_cycle(context)
+        return cycle % 2 == 0
+
+    def _advance_cycle(self, context: BattleContext) -> int:
+        cycle = int(self.unique_status.get("attack_cycle", 0.0) + 1.0)
+        self.unique_status["attack_cycle"] = float(cycle)
+        context.log(f"{self.name} 进入第 {cycle} 次攻击流程")
+        return cycle
+
+    def active_skill(self, target: Character, context: BattleContext) -> None:
+        lost_hp = max(0.0, self.stats.max_hp - self.hp)
+        extra_damage = max(1.0, lost_hp * 0.12 + 8.0)
+        dealt = target.receive_damage(extra_damage)
+        context.log(f"{self.name} 将失血化为霜刃，额外造成 {dealt:.1f} 点伤害")
+
+
 class Theresa(Character):
     name = "德丽莎"
 
