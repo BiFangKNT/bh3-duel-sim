@@ -101,6 +101,7 @@ class Kiana(Character):
 class LiSushang(Character):
     name = "李素裳"
     BLEED_KEY = "lis_bleed"
+    SKIP_NORMAL_KEY = "lis_skip_normal"
 
     def __init__(self) -> None:
         super().__init__(Stats(max_hp=100.0, attack=20.0, defense=7.0, speed=25.0))
@@ -116,14 +117,22 @@ class LiSushang(Character):
         context.log(f"{self.name} 进入第 {cycle} 次攻击流程")
         return cycle
 
+    def on_turn_start(self, context: BattleContext) -> bool:
+        self.unique_status.pop(self.SKIP_NORMAL_KEY, None)
+        return super().on_turn_start(context)
+
     def active_skill(self, target: Character, context: BattleContext) -> None:
         context.log(f"{self.name} 释放凌厉剑舞")
         damage = self.basic_attack(target, context, base_damage=22.0)
         stacks = context.rng.randint(3, 6)
         self._apply_bleed(target, float(stacks), 2.0, context)
+        self.unique_status[self.SKIP_NORMAL_KEY] = True
         context.log(f"{self.name} 主动技造成 {damage:.1f} 伤害并施加 {stacks} 层流血")
 
     def perform_normal_attack(self, target: Character, context: BattleContext) -> None:
+        if self.unique_status.pop(self.SKIP_NORMAL_KEY, False):
+            context.log(f"{self.name} 主动技能覆盖本回合普通攻击")
+            return
         self.basic_attack(target, context)
         if context.rng.random() < 0.30:
             self._apply_bleed(target, 2.0, 2.0, context)

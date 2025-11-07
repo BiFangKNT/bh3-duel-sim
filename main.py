@@ -11,7 +11,8 @@ MATCHUPS: Tuple[Tuple[Type[Character], Type[Character]], ...] = (
     # (LiSushang, Kiana),
     # (Bronya, LiSushang),
     # (ChenXue, Theresa),
-    (ChenXue, DreamSeeker),
+    # (ChenXue, DreamSeeker),
+    (DreamSeeker, Theresa),
 )
 
 
