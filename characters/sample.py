@@ -248,3 +248,46 @@ class Theresa(Character):
         if context:
             context.log(f"{self.name} 因 {state} 被动触发恢复")
         self.heal(self.stats.max_hp * 0.10, context)
+
+
+class DreamSeeker(Character):
+    name = "寻梦者"
+
+    def __init__(self) -> None:
+        super().__init__(Stats(max_hp=100.0, attack=16.0, defense=8.0, speed=21.0))
+        self.unique_status["attack_cycle"] = 0.0
+
+    def can_use_active_skill(self, target: Character, context: BattleContext) -> bool:
+        cycle = self._advance_cycle(context)
+        return cycle % 3 == 0
+
+    def _advance_cycle(self, context: BattleContext) -> int:
+        cycle = int(self.unique_status.get("attack_cycle", 0.0) + 1.0)
+        self.unique_status["attack_cycle"] = float(cycle)
+        context.log(f"{self.name} 进入第 {cycle} 次攻击流程")
+        return cycle
+
+    def active_skill(self, target: Character, context: BattleContext) -> None:
+        attack_value = self._prepare_attack_value(context)
+        damage = attack_value * 1.30
+        dealt = self.basic_attack(
+            target,
+            context,
+            base_damage=damage,
+            ignore_defense=True,
+            ignore_reduction=True,
+        )
+        context.log(f"{self.name} 将信念化作梦境冲击，造成 {dealt:.1f} 点伤害")
+
+    def perform_normal_attack(self, target: Character, context: BattleContext) -> None:
+        attack_value = self._prepare_attack_value(context)
+        self.basic_attack(target, context, base_damage=attack_value)
+
+    def _prepare_attack_value(self, context: BattleContext) -> float:
+        if self.hp < 50.0:
+            context.log(f"{self.name} 陷入背水全力，攻击力提高至 30")
+            return 30.0
+        if context.rng.random() < 0.60:
+            context.log(f"{self.name} 被动触发，攻击力临时提高至 20")
+            return 20.0
+        return self.stats.attack

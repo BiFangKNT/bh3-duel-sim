@@ -1,5 +1,5 @@
 from .base import BattleContext, Character, Stats
-from .sample import Bronya, BronyaTest, ChenXue, Kiana, LiSushang, Theresa
+from .sample import Bronya, BronyaTest, ChenXue, DreamSeeker, Kiana, LiSushang, Theresa
 
 __all__ = [
     "BattleContext",
@@ -8,6 +8,7 @@ __all__ = [
     "Bronya",
     "BronyaTest",
     "ChenXue",
+    "DreamSeeker",
     "Kiana",
     "LiSushang",
     "Theresa",
