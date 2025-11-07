@@ -1,10 +1,11 @@
 from .base import BattleContext, Character, Stats
-from .sample import BlazingWarrior, FrostCaster
+from .sample import Bronya, BronyaTest, Kiana
 
 __all__ = [
     "BattleContext",
     "Character",
     "Stats",
-    "BlazingWarrior",
-    "FrostCaster",
+    "Bronya",
+    "BronyaTest",
+    "Kiana",
 ]

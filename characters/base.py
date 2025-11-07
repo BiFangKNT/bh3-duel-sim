@@ -16,71 +16,157 @@ class Stats:
 class Character:
     """角色基类，包含基础属性与技能钩子。"""
 
+    COMMON_STATE_KEYS = (
+        "speed_bonus",
+        "speed_penalty",
+        "stunned_turns",
+        "confused_turns",
+        "damage_reduction_value",
+        "damage_reduction_turns",
+    )
+
     name: str = "Unnamed"
 
     def __init__(self, stats: Stats) -> None:
         self.stats = stats
         self.hp = float(stats.max_hp)
-        self.status: Dict[str, float] = {}  # 用于记录持续状态或临时加成
+        self.common_status: Dict[str, float] = {key: 0.0 for key in self.COMMON_STATE_KEYS}
+        self.unique_status: Dict[str, float] = {}
 
     # 可以由子类覆写的方法
     def active_skill(self, target: "Character", context: "BattleContext") -> None:
-        """主动技能默认执行普通攻击。"""
-        self.basic_attack(target, context)
+        """主动技能默认无特殊效果。"""
+
+    def can_use_active_skill(self, target: "Character", context: "BattleContext") -> bool:
+        """决定当前回合是否可以释放主动技能。"""
+        return False
 
     def passive_skill(self, context: "BattleContext") -> None:
         """战斗开始或每回合触发的被动技能，占位实现。"""
 
+    def perform_normal_attack(self, target: "Character", context: "BattleContext") -> None:
+        """执行当前回合的普通攻击，默认调用 basic_attack。"""
+        self.basic_attack(target, context)
+
     # 战斗行为
     def take_turn(self, target: "Character", context: "BattleContext") -> None:
+        context.log(f"{self.name} 行动开始，HP {self.hp:.1f}")
         if not self.on_turn_start(context):
+            context.log(f"{self.name} 因异常状态而跳过回合")
+            self.on_turn_end(context)
             return
         self.passive_skill(context)
-        self.active_skill(target, context)
+        if self.can_use_active_skill(target, context):
+            context.log(f"{self.name} 释放主动技能")
+            self.active_skill(target, context)
+        normal_target = self.get_normal_attack_target(target, context)
+        self.perform_normal_attack(normal_target, context)
+        self.on_turn_end(context)
 
     def is_alive(self) -> bool:
         return self.hp > 0
 
     def get_effective_speed(self) -> float:
-        bonus = float(self.status.get("speed_bonus", 0.0))
-        penalty = float(self.status.get("speed_penalty", 0.0))
+        bonus = float(self.common_status.get("speed_bonus", 0.0))
+        penalty = float(self.common_status.get("speed_penalty", 0.0))
         return max(1.0, self.stats.speed + bonus - penalty)
 
-    def basic_attack(self, target: "Character", context: "BattleContext") -> None:
-        raw_damage = max(1.0, self.stats.attack - target.stats.defense)
-        target.receive_damage(raw_damage)
+    def get_normal_attack_target(self, intended_target: "Character", context: "BattleContext") -> "Character":
+        confusion = self.common_status.get("confused_turns", 0.0)
+        if confusion > 0:
+            context.log(f"{self.name} 处于混乱，普通攻击改为自己")
+            return self
+        return intended_target
 
-    def receive_damage(self, amount: float) -> None:
-        self.hp -= amount
+    def basic_attack(
+        self,
+        target: "Character",
+        context: "BattleContext",
+        *,
+        base_damage: float | None = None,
+        multiplier: float = 1.0,
+        flat_bonus: float = 0.0,
+        ignore_defense: bool = False,
+        ignore_reduction: bool = False,
+    ) -> float:
+        attack_value = base_damage if base_damage is not None else self.stats.attack * multiplier + flat_bonus
+        defense = 0.0 if ignore_defense else target.stats.defense
+        raw_damage = max(1.0, attack_value - defense)
+        dealt = target.receive_damage(raw_damage, ignore_reduction=ignore_reduction)
+        context.log(f"{self.name} 对 {target.name} 造成 {dealt:.1f} 点伤害")
+        return dealt
+
+    def receive_damage(self, amount: float, *, ignore_reduction: bool = False, pure_damage: bool = False) -> float:
+        if amount <= 0:
+            return 0.0
+        if pure_damage:
+            self.hp -= amount
+            return amount
+        reduction = 0.0 if ignore_reduction else float(self.common_status.get("damage_reduction_value", 0.0))
+        actual = max(0.0, amount - reduction)
+        self.hp -= actual
+        return actual
 
     def on_turn_start(self, context: "BattleContext") -> bool:
         acted = True
-        penalty = self.status.get("speed_penalty", 0.0)
-        if penalty:
-            penalty = max(0.0, penalty - 1.0)
-            if penalty:
-                self.status["speed_penalty"] = penalty
-            else:
-                self.status.pop("speed_penalty", None)
-        stun = self.status.get("stunned_turns", 0.0)
-        if stun:
-            stun -= 1.0
-            if stun > 0:
-                self.status["stunned_turns"] = stun
-            else:
-                self.status.pop("stunned_turns", None)
+        penalty_before = self.common_status.get("speed_penalty", 0.0)
+        if penalty_before > 0:
+            remaining = self._decay_common_status("speed_penalty")
+            context.log(f"{self.name} 的减速效果剩余 {remaining:.1f} 回合")
+        stun_before = self.common_status.get("stunned_turns", 0.0)
+        if stun_before > 0:
+            remaining = self._decay_common_status("stunned_turns")
+            context.log(f"{self.name} 被控制，剩余 {remaining:.1f} 回合无法行动")
             acted = False
+        dr_turns = self.common_status.get("damage_reduction_turns", 0.0)
+        if dr_turns > 0:
+            remaining = self._decay_common_status("damage_reduction_turns")
+            if remaining == 0.0:
+                self.common_status["damage_reduction_value"] = 0.0
+                context.log(f"{self.name} 的减伤效果结束")
         return acted
+
+    def on_turn_end(self, context: "BattleContext") -> None:
+        confusion = self.common_status.get("confused_turns", 0.0)
+        if confusion > 0:
+            remaining = self._decay_common_status("confused_turns")
+            if remaining > 0:
+                context.log(f"{self.name} 仍处于混乱，剩余 {remaining:.1f} 回合")
+            else:
+                context.log(f"{self.name} 恢复了清醒")
+
+    def apply_confusion(self, turns: float, context: "BattleContext" | None = None) -> None:
+        new_turns = max(self.common_status.get("confused_turns", 0.0), max(0.0, turns))
+        self.common_status["confused_turns"] = new_turns
+        if context:
+            context.log(f"{self.name} 陷入混乱 {new_turns:.1f} 回合")
+
+    def apply_damage_reduction(self, value: float, turns: float, context: "BattleContext" | None = None) -> None:
+        self.common_status["damage_reduction_value"] = max(0.0, value)
+        self.common_status["damage_reduction_turns"] = max(0.0, turns)
+        if context:
+            context.log(f"{self.name} 获得减伤 {value:.1f}，持续 {turns:.1f} 回合")
+
+    def _decay_common_status(self, key: str, amount: float = 1.0) -> float:
+        value = self.common_status.get(key, 0.0)
+        if value <= 0:
+            return 0.0
+        value = max(0.0, value - amount)
+        self.common_status[key] = value
+        return value
 
     def clone(self) -> "Character":
         """以初始状态复制角色，供新的战斗使用。"""
-        cloned = self.__class__(Stats(
-            float(self.stats.max_hp),
-            float(self.stats.attack),
-            float(self.stats.defense),
-            float(self.stats.speed),
-        ))
-        return cloned
+        try:
+            return self.__class__()  # type: ignore[call-arg]
+        except TypeError:
+            cloned = self.__class__(Stats(
+                float(self.stats.max_hp),
+                float(self.stats.attack),
+                float(self.stats.defense),
+                float(self.stats.speed),
+            ))
+            return cloned
 
 
 class BattleContext:
@@ -89,3 +175,19 @@ class BattleContext:
     def __init__(self, rng: random.Random | None = None) -> None:
         self.turn_index = 0
         self.rng = rng or random.Random()
+        self.logging_enabled = False
+        self.turn_log: list[str] = []
+
+    def set_logging(self, enabled: bool) -> None:
+        self.logging_enabled = enabled
+
+    def log(self, message: str) -> None:
+        if self.logging_enabled:
+            self.turn_log.append(message)
+
+    def consume_turn_log(self) -> list[str]:
+        if not self.turn_log:
+            return []
+        logs = self.turn_log[:]
+        self.turn_log.clear()
+        return logs
